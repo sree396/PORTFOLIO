@@ -1,3 +1,131 @@
+const motionToggle = document.querySelector('.motion-toggle');
+const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+let savedMotionPreference = null;
+try {
+  const storedPreference = window.localStorage.getItem('portfolio-motion');
+  if (storedPreference === 'on' || storedPreference === 'off') savedMotionPreference = storedPreference;
+} catch {}
+
+let motionDisabled = savedMotionPreference === 'off'
+  || (savedMotionPreference === null && motionPreference.matches);
+
+const applyMotionPreference = () => {
+  document.documentElement.classList.toggle('motion-paused', motionDisabled);
+  document.documentElement.classList.toggle('motion-user-enabled', savedMotionPreference === 'on');
+  document.body.classList.toggle('motion-paused', motionDisabled);
+  if (motionToggle) {
+    motionToggle.setAttribute('aria-pressed', String(motionDisabled));
+    motionToggle.setAttribute('aria-label', motionDisabled ? 'Turn animations on' : 'Turn animations off');
+    motionToggle.dataset.tooltip = `Motion: ${motionDisabled ? 'off' : 'on'}`;
+  }
+  if (motionDisabled) {
+    document.body.classList.remove('hero-entering');
+    document.querySelectorAll('.page-reveal').forEach((element) => element.classList.add('is-revealed'));
+    document.querySelector('.hero-art')?.classList.remove('is-floating', 'finish-hover-loop', 'is-portrait-hovered');
+  }
+  document.dispatchEvent(new CustomEvent('portfolio:motionchange', { detail: { disabled: motionDisabled } }));
+};
+
+applyMotionPreference();
+
+motionToggle?.addEventListener('click', () => {
+  motionDisabled = !motionDisabled;
+  savedMotionPreference = motionDisabled ? 'off' : 'on';
+  try { window.localStorage.setItem('portfolio-motion', savedMotionPreference); } catch {}
+  applyMotionPreference();
+});
+
+motionPreference.addEventListener?.('change', (event) => {
+  if (savedMotionPreference !== null) return;
+  motionDisabled = event.matches;
+  applyMotionPreference();
+});
+
+const themeToggle = document.querySelector('.theme-toggle');
+const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+let darkMood = false;
+let themeTransitionTimer = null;
+let themeSwapTimer = null;
+let themeFadeFrame = null;
+try { darkMood = window.localStorage.getItem('portfolio-theme') === 'dark'; } catch {}
+
+const applyThemeState = () => {
+  document.documentElement.classList.toggle('theme-dark', darkMood);
+  themeToggle?.setAttribute('aria-pressed', String(darkMood));
+  themeToggle?.setAttribute('aria-label', darkMood ? 'Turn dark mood off' : 'Turn dark mood on');
+  if (themeToggle) themeToggle.dataset.tooltip = `Dark mood: ${darkMood ? 'on' : 'off'}`;
+  if (themeColorMeta) themeColorMeta.content = darkMood ? '#101722' : '#1479e8';
+  document.dispatchEvent(new CustomEvent('portfolio:themechange', { detail: { dark: darkMood } }));
+};
+
+applyThemeState();
+
+const setDarkMood = (enabled) => {
+  darkMood = enabled;
+  try { window.localStorage.setItem('portfolio-theme', darkMood ? 'dark' : 'light'); } catch {}
+
+  const root = document.documentElement;
+  const header = document.querySelector('.site-header');
+  if (themeTransitionTimer !== null) window.clearTimeout(themeTransitionTimer);
+  if (themeSwapTimer !== null) window.clearTimeout(themeSwapTimer);
+  if (themeFadeFrame !== null) window.cancelAnimationFrame(themeFadeFrame);
+  themeTransitionTimer = null;
+  themeSwapTimer = null;
+  themeFadeFrame = null;
+  root.classList.remove('theme-transitioning');
+  header?.classList.remove('theme-fade-out');
+
+  const updateTheme = applyThemeState;
+
+  if (motionDisabled) {
+    updateTheme();
+    return;
+  }
+
+  const hasLiveCustomCursor = document.body.classList.contains('custom-cursor-active');
+  if (!hasLiveCustomCursor && typeof document.startViewTransition === 'function') {
+    const rect = themeToggle?.getBoundingClientRect();
+    const x = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+    const y = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
+    const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y)) + 32;
+    root.style.setProperty('--theme-wipe-origin', `${x}px ${y}px`);
+    root.style.setProperty('--theme-wipe-radius', `${radius}px`);
+    try {
+      const transition = document.startViewTransition(updateTheme);
+      const clearWipeOrigin = () => {
+        root.style.removeProperty('--theme-wipe-origin');
+        root.style.removeProperty('--theme-wipe-radius');
+      };
+      transition.finished.then(clearWipeOrigin, clearWipeOrigin);
+      return;
+    } catch {
+      root.style.removeProperty('--theme-wipe-origin');
+      root.style.removeProperty('--theme-wipe-radius');
+    }
+  }
+
+  root.classList.add('theme-transitioning');
+  if (header) {
+    header.classList.add('theme-fade-out');
+    themeSwapTimer = window.setTimeout(() => {
+      updateTheme();
+      themeFadeFrame = window.requestAnimationFrame(() => {
+        header.classList.remove('theme-fade-out');
+        themeFadeFrame = null;
+      });
+      themeSwapTimer = null;
+    }, 140);
+  } else {
+    updateTheme();
+  }
+  themeTransitionTimer = window.setTimeout(() => {
+    root.classList.remove('theme-transitioning');
+    themeTransitionTimer = null;
+  }, 900);
+};
+
+themeToggle?.addEventListener('click', () => setDarkMood(!darkMood));
+
 const menuButton = document.querySelector('.menu-toggle');
 const navigation = document.querySelector('.site-nav');
 const siteHeader = document.querySelector('.site-header');
@@ -36,11 +164,10 @@ if (finePointer.matches) {
   cursorMark.setAttribute('aria-hidden', 'true');
   cursorMark.innerHTML = '<i class="cursor-core"></i><i class="cursor-trail cursor-trail-one"></i><i class="cursor-trail cursor-trail-two"></i>';
   document.body.append(cursorMark);
-  document.body.classList.add('custom-cursor-active');
+  document.body.classList.toggle('custom-cursor-active', !motionDisabled);
 
   const cursorDots = Array.from(cursorMark.querySelectorAll('i'));
   const cursorPoints = cursorDots.map(() => ({ x: 0, y: 0 }));
-  const reduceCursorMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let cursorX = 0;
   let cursorY = 0;
   let cursorFrame = 0;
@@ -53,15 +180,10 @@ if (finePointer.matches) {
     cursorDots.forEach((dot, index) => {
       const point = cursorPoints[index];
       if (index > 0) {
-        if (reduceCursorMotion) {
-          point.x = cursorX - (index === 1 ? 10 : 18);
-          point.y = cursorY + (index === 1 ? 5 : 10);
-        } else {
-          const leader = cursorPoints[index - 1];
-          const easing = index === 1 ? 0.34 : 0.2;
-          point.x += (leader.x - point.x) * easing;
-          point.y += (leader.y - point.y) * easing;
-        }
+        const leader = cursorPoints[index - 1];
+        const easing = index === 1 ? 0.34 : 0.2;
+        point.x += (leader.x - point.x) * easing;
+        point.y += (leader.y - point.y) * easing;
       }
       dot.style.transform = `translate3d(${point.x}px, ${point.y}px, 0) translate(-50%, -50%)`;
     });
@@ -69,19 +191,19 @@ if (finePointer.matches) {
       const leader = cursorPoints[index];
       return Math.abs(leader.x - point.x) + Math.abs(leader.y - point.y) > 0.2;
     });
-    if (!reduceCursorMotion && trailStillMoving && cursorMark.classList.contains('is-visible')) {
+    if (trailStillMoving && cursorMark.classList.contains('is-visible')) {
       cursorFrame = window.requestAnimationFrame(updateCursor);
     }
   };
 
   window.addEventListener('pointermove', (event) => {
-    if (event.pointerType !== 'mouse' && event.pointerType !== 'pen') return;
+    if (motionDisabled || (event.pointerType !== 'mouse' && event.pointerType !== 'pen')) return;
     cursorX = event.clientX;
     cursorY = event.clientY;
     if (!hasCursorPosition) {
-      cursorPoints.forEach((point, index) => {
-        point.x = cursorX - (reduceCursorMotion && index ? (index === 1 ? 10 : 18) : 0);
-        point.y = cursorY + (reduceCursorMotion && index ? (index === 1 ? 5 : 10) : 0);
+      cursorPoints.forEach((point) => {
+        point.x = cursorX;
+        point.y = cursorY;
       });
       hasCursorPosition = true;
     }
@@ -95,6 +217,10 @@ if (finePointer.matches) {
     if (cursorFrame) window.cancelAnimationFrame(cursorFrame);
     cursorFrame = 0;
   };
+  document.addEventListener('portfolio:motionchange', () => {
+    document.body.classList.toggle('custom-cursor-active', !motionDisabled);
+    if (motionDisabled) hideCursor();
+  });
   window.addEventListener('pointerout', (event) => {
     if (!event.relatedTarget) hideCursor();
   });
@@ -134,7 +260,6 @@ if (featuredPanel) {
 
 const heroPortrait = document.querySelector('.hero-portrait');
 const heroArt = document.querySelector('.hero-art');
-const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 const greetingRotator = document.querySelector('[data-greeting-rotator]');
 if (greetingRotator) {
@@ -154,6 +279,8 @@ if (greetingRotator) {
   greetingRotator.append(measure);
 
   let greetingIndex = 0;
+  let greetingTimer = null;
+  let greetingTransitionTimer = null;
   const setGreetingWidth = (text) => {
     measure.textContent = text;
     greetingRotator.style.width = `${Math.ceil(measure.getBoundingClientRect().width + 2)}px`;
@@ -170,30 +297,42 @@ if (greetingRotator) {
     });
     return word;
   };
+  const showStaticGreeting = () => {
+    greetingRotator.querySelectorAll('.greeting-word').forEach((word) => word.remove());
+    const word = document.createElement('span');
+    word.className = 'greeting-word is-current';
+    word.textContent = greetings[greetingIndex];
+    greetingRotator.insertBefore(word, measure);
+    setGreetingWidth(greetings[greetingIndex]);
+  };
+  const showAnimatedGreeting = () => {
+    greetingRotator.querySelectorAll('.greeting-word').forEach((word) => word.remove());
+    const word = createGreeting(greetings[greetingIndex], 'is-current');
+    greetingRotator.insertBefore(word, measure);
+  };
 
   setGreetingWidth(greetings[greetingIndex]);
   document.fonts?.ready.then(() => setGreetingWidth(greetings[greetingIndex]));
   window.addEventListener('resize', () => setGreetingWidth(greetings[greetingIndex]), { passive: true });
 
+  const scheduleGreeting = () => {
+    if (!motionDisabled) greetingTimer = window.setTimeout(rotateGreeting, rotationInterval);
+  };
   const rotateGreeting = () => {
+    greetingTimer = null;
+    if (motionDisabled) return;
     const nextIndex = (greetingIndex + 1) % greetings.length;
     const currentWord = greetingRotator.querySelector('.greeting-word.is-current');
     if (!currentWord) return;
-
-    if (reducedMotion.matches) {
-      currentWord.textContent = greetings[nextIndex];
-      greetingIndex = nextIndex;
-      setGreetingWidth(greetings[greetingIndex]);
-      window.setTimeout(rotateGreeting, rotationInterval);
-      return;
-    }
 
     const outgoingLength = splitGreeting(greetings[greetingIndex]).length;
     currentWord.classList.remove('is-current');
     currentWord.classList.add('is-exiting');
     const exitDuration = 520 + Math.max(0, outgoingLength - 1) * staggerDuration;
 
-    window.setTimeout(() => {
+    greetingTransitionTimer = window.setTimeout(() => {
+      greetingTransitionTimer = null;
+      if (motionDisabled) return;
       currentWord.remove();
       greetingIndex = nextIndex;
       setGreetingWidth(greetings[greetingIndex]);
@@ -204,11 +343,25 @@ if (greetingRotator) {
         nextWord.classList.remove('is-entering');
         nextWord.classList.add('is-current');
       });
-      window.setTimeout(rotateGreeting, rotationInterval);
+      scheduleGreeting();
     }, exitDuration);
   };
 
-  window.setTimeout(rotateGreeting, rotationInterval);
+  document.addEventListener('portfolio:motionchange', () => {
+    if (greetingTimer !== null) window.clearTimeout(greetingTimer);
+    if (greetingTransitionTimer !== null) window.clearTimeout(greetingTransitionTimer);
+    greetingTimer = null;
+    greetingTransitionTimer = null;
+    if (motionDisabled) {
+      showStaticGreeting();
+    } else {
+      showAnimatedGreeting();
+      scheduleGreeting();
+    }
+  });
+
+  if (motionDisabled) showStaticGreeting();
+  else scheduleGreeting();
 }
 
 const variableProximityHeadings = document.querySelectorAll(
@@ -278,57 +431,58 @@ if (variableProximityHeadings.length) {
     });
   });
 
-  if (!reducedMotion.matches) {
-    let pointer = null;
-    let framePending = false;
-    const applyBaseSettings = () => {
-      letters.forEach((letter) => {
-        letter.style.fontVariationSettings = fromFontVariationSettings;
-      });
-    };
-    const updateLetters = () => {
-      framePending = false;
-      if (!pointer) return;
-
-      letters.forEach((letter) => {
-        const rect = letter.getBoundingClientRect();
-        const distance = Math.hypot(
-          pointer.x - (rect.left + rect.width / 2),
-          pointer.y - (rect.top + rect.height / 2)
-        );
-        if (distance >= radius) {
-          letter.style.fontVariationSettings = fromFontVariationSettings;
-          return;
-        }
-
-        const influence = Math.min(Math.max(1 - distance / radius, 0), 1);
-        const settings = axes.map(({ axis, fromValue, toValue }) => {
-          const value = fromValue + (toValue - fromValue) * influence;
-          return `'${axis}' ${value}`;
-        }).join(', ');
-        letter.style.fontVariationSettings = settings;
-      });
-    };
-    document.addEventListener('pointermove', (event) => {
-      if (event.pointerType === 'touch') return;
-      pointer = { x: event.clientX, y: event.clientY };
-      if (!framePending) {
-        framePending = true;
-        window.requestAnimationFrame(updateLetters);
-      }
-    }, { passive: true });
-    const resetProximity = () => {
-      pointer = null;
-      applyBaseSettings();
-    };
-    document.addEventListener('pointerout', (event) => {
-      if (!event.relatedTarget) resetProximity();
+  let pointer = null;
+  let framePending = false;
+  const applyBaseSettings = () => {
+    letters.forEach((letter) => {
+      letter.style.fontVariationSettings = fromFontVariationSettings;
     });
-    window.addEventListener('blur', resetProximity);
-  }
+  };
+  const updateLetters = () => {
+    framePending = false;
+    if (!pointer || motionDisabled) return;
+
+    letters.forEach((letter) => {
+      const rect = letter.getBoundingClientRect();
+      const distance = Math.hypot(
+        pointer.x - (rect.left + rect.width / 2),
+        pointer.y - (rect.top + rect.height / 2)
+      );
+      if (distance >= radius) {
+        letter.style.fontVariationSettings = fromFontVariationSettings;
+        return;
+      }
+
+      const influence = Math.min(Math.max(1 - distance / radius, 0), 1);
+      const settings = axes.map(({ axis, fromValue, toValue }) => {
+        const value = fromValue + (toValue - fromValue) * influence;
+        return `'${axis}' ${value}`;
+      }).join(', ');
+      letter.style.fontVariationSettings = settings;
+    });
+  };
+  document.addEventListener('pointermove', (event) => {
+    if (motionDisabled || event.pointerType === 'touch') return;
+    pointer = { x: event.clientX, y: event.clientY };
+    if (!framePending) {
+      framePending = true;
+      window.requestAnimationFrame(updateLetters);
+    }
+  }, { passive: true });
+  const resetProximity = () => {
+    pointer = null;
+    applyBaseSettings();
+  };
+  document.addEventListener('pointerout', (event) => {
+    if (!event.relatedTarget) resetProximity();
+  });
+  document.addEventListener('portfolio:motionchange', () => {
+    if (motionDisabled) resetProximity();
+  });
+  window.addEventListener('blur', resetProximity);
 }
 
-if (!reducedMotion.matches) {
+if (!motionDisabled) {
   document.body.classList.add('page-motion');
   document.body.classList.add('hero-entering');
 
@@ -366,7 +520,7 @@ if (!reducedMotion.matches) {
 
 if (heroPortrait && heroArt) {
   heroPortrait.addEventListener('pointerenter', (event) => {
-    if (reducedMotion.matches || (event.pointerType !== 'mouse' && event.pointerType !== 'pen')) return;
+    if (motionDisabled || (event.pointerType !== 'mouse' && event.pointerType !== 'pen')) return;
     heroArt.classList.remove('finish-hover-loop');
     heroArt.classList.add('is-floating', 'is-portrait-hovered');
   });
@@ -374,7 +528,7 @@ if (heroPortrait && heroArt) {
   heroPortrait.addEventListener('pointerleave', () => {
     heroArt.classList.remove('is-portrait-hovered');
     if (!heroArt.classList.contains('is-floating')) return;
-    if (reducedMotion.matches) {
+    if (motionDisabled) {
       heroArt.classList.remove('is-floating', 'finish-hover-loop', 'is-portrait-hovered');
       return;
     }
@@ -386,7 +540,4 @@ if (heroPortrait && heroArt) {
     heroArt.classList.remove('is-floating', 'finish-hover-loop');
   });
 
-  reducedMotion.addEventListener?.('change', (event) => {
-    if (event.matches) heroArt.classList.remove('is-floating', 'finish-hover-loop', 'is-portrait-hovered');
-  });
 }

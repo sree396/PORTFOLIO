@@ -16,10 +16,10 @@ A responsive, single-page portfolio built with plain HTML, CSS, and JavaScript. 
     │   ├── script.js
     │   └── particle-text.js
     └── images/
-        └── hero-cutout-brushed.png
+        └── hero-cutout-brushed.webp
 ```
 
-The page uses `assets/images/hero-cutout-brushed.png` for the hero portrait.
+The hero portrait is a transparent WebP sized for its on-page display, keeping the same cutout while loading faster.
 
 ## View locally
 

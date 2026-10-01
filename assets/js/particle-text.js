@@ -6,8 +6,8 @@
     text: 'Let’s build\nsomething useful.',
     particleSize: 2,
     density: 2,
-    color: '#111111',
-    highlightColor: '#1479e8',
+    color: document.documentElement.classList.contains('theme-dark') ? '#eaf1fb' : '#111111',
+    highlightColor: document.documentElement.classList.contains('theme-dark') ? '#67aaff' : '#1479e8',
     scatter: 180,
     gatherDuration: 1600,
     stagger: 420,
@@ -33,7 +33,9 @@
   const easeOutCubic = (value) => 1 - Math.pow(1 - value, 3);
   const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-  let reducedMotion = reducedMotionQuery.matches;
+  let reducedMotion = document.body.classList.contains('motion-paused')
+    || (reducedMotionQuery.matches && !document.documentElement.classList.contains('motion-user-enabled'));
+  document.body.classList.toggle('particle-heading-animated', !reducedMotion);
   let particles = [];
   let animationFrame = null;
   let resizeFrame = null;
@@ -290,15 +292,42 @@
     pointer.active = false;
     queueRender();
   };
-  const handleReducedMotion = (event) => {
-    reducedMotion = event.matches;
-    sampleText();
+  const applyMotionPreference = (disabled) => {
+    reducedMotion = disabled;
+    document.body.classList.toggle('particle-heading-animated', !reducedMotion);
+    if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
+    animationFrame = null;
+    pointer.active = false;
+
+    if (reducedMotion) {
+      gathering = false;
+      particles.forEach((particle) => {
+        particle.x = particle.targetX;
+        particle.y = particle.targetY;
+        particle.startX = particle.targetX;
+        particle.startY = particle.targetY;
+        particle.delay = 0;
+      });
+    } else if (particles.length) {
+      startGather(true);
+    }
+    queueRender();
   };
 
   canvas.addEventListener('pointerenter', handlePointerEnter);
   canvas.addEventListener('pointermove', handlePointerMove, { passive: true });
   canvas.addEventListener('pointerleave', handlePointerLeave);
-  reducedMotionQuery.addEventListener?.('change', handleReducedMotion);
+  document.addEventListener('portfolio:themechange', (event) => {
+    options.color = event.detail?.dark ? '#eaf1fb' : '#111111';
+    options.highlightColor = event.detail?.dark ? '#67aaff' : '#1479e8';
+    particles.forEach((particle) => {
+      particle.color = particle.lineIndex === 0 ? options.color : options.highlightColor;
+    });
+    queueRender();
+  });
+  document.addEventListener('portfolio:motionchange', (event) => {
+    applyMotionPreference(event.detail?.disabled ?? document.body.classList.contains('motion-paused'));
+  });
   let resizeObserver;
   if ('ResizeObserver' in window) {
     resizeObserver = new ResizeObserver(queueSample);
